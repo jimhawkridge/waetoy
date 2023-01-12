@@ -16,7 +16,7 @@ export async function onRequestPost({request, env}) {
         return makeResponse(`Error ${respBody}`);
     }
     return new Response(
-        respBody + ` A: "${account}", B: "${bearer}"`,
+        respBody,
 		{
 			headers: { 'content-type': 'application/json' },
 		}
