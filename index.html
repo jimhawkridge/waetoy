@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>WAE Explorer Toy</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vega/5.22.1/vega.min.js" integrity="sha512-rlIN4CAAk7ObfoJ3XCJ4f6cfP9zf0yLR42OZYAMp+CNKjrCkRp7E8lRT7dNu7mpTpoYjhMzoKUFgKUeX4i/P1g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vega-lite/5.6.0/vega-lite.min.js" integrity="sha512-TKxvPnxAV9S09IClpgFnU0FUC16y68aFTZEjJlwCj3kAYCRPVPxHxyoKXpIg2AZiXUUboUWt3KvETxsch1qifg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vega-embed/6.21.0/vega-embed.min.js" integrity="sha512-NmEzbb4n57P2AvxR9rqI4pStASryyS8leoq1ouMRplfoir4FYJWN9luuzrCFZkDU4xWMNHiseaxcyljTgn4LfQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js" integrity="sha512-K/oyQtMXpxI4+K0W7H25UopjM8pzq0yrVdFdG21Fh5dBe91I40pDd9A4lzNlHPHBIP2cwZuoxaUSX0GJSObvGA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css" integrity="sha512-MQXduO8IQnJVq1qmySpN87QQkiR1bZHtorbJBD0tzy7/0U9+YIC93QWHeGTEoojMVHWWNkoCp8V6OzVSYrX0oQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.14.0/ace.min.js" integrity="sha512-s57ywpCtz+4PU992Bg1rDtr6+1z38gO2mS92agz2nqQcuMQ6IvgLWoQ2SFpImvg1rbgqBKeSEq0d9bo9NtBY0w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.14.0/theme-monokai.min.js" integrity="sha512-vH1p51CJtqdqWMpL32h5B9600achcN1XeTfd31hEcrCcCb5PCljIu7NQppgdNtdsayRQTnKmyf94s6HYiGQ9BA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.14.0/mode-sql.min.js" integrity="sha512-UBVNzqbl7u/EDMuOgFoE81YqUScjz/Uo4B3VhjlOqtKhi741M7ERSUllUeBxwr8khutma/UbCJ7+R8KDdUA52w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+    <style>
+        body {
+            background-color: #333;
+            font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+            color: #aaa;
+        }
+
+        h4 {
+            margin: -10px -10px 10px;
+            background-color: #444;
+            padding: 5px;
+            border-radius: 5px 5px 0 0;
+        }
+
+        .wrapthing {
+            border: 1px solid #aaa;
+            border-radius: 5px;
+            padding: 10px;
+            background-color: #272822;
+            margin-bottom: 10px;
+        }
+
+        #wrapvis {
+            background-color: #333;
+        }
+
+        #vis {
+            width: 100%;
+        }
+
+        #query {
+            display: block;
+            width: 100%;
+            height: 400px;
+        }
+
+        #update {
+            margin-top: 10px;
+        }
+
+        button {
+            background-color: #444;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            color: #ccc;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #666;
+        }
+
+        button:active {
+            background-color: #ccc;
+            color: #333;
+        }
+
+        .loading {
+            opacity: 50%;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="wraprange" class="wrapthing">
+        <h4>Time range</h4>
+        From:<input id="fromdt">
+        To:<input id="todt">
+        <button id="apply">Apply</button>
+    </div>
+    
+    <div id="wrapvis" class="wrapthing loading">
+        <div id="vis"></div>
+    </div>
+
+    <div id="wrapquery" class="wrapthing">
+        <h4>Query</h4>
+        <div id="query">SELECT 
+    $timeSeries AS t, 
+    index1 AS label,
+    toUInt32(SUM(_sample_interval)) AS v 
+FROM change_me
+WHERE 
+    endsWith(index1, 'uk') AND
+    $timeFilter
+GROUP BY label, t
+        </div>
+        <button id="update">Run query</button>
+    </div>
+
+
+    <script type="text/javascript">
+var fromFP;
+var toFP;
+var theView = null;
+var theEditor;
+
+function apply() {
+    renderChart();
+
+    // theView.signal('fromSignal', from.getTime());
+    // theView.signal('toSignal', to.getTime());
+}
+
+function replaceQuery(query, range) {
+    query = query.replace(/\$timeFilter/g, `timestamp > toDateTime(${range.fromSeconds}) AND timestamp <= toDateTime(${range.toSeconds})`);
+    query = query.replace(/\$timeSeries/g, `toStartOfInterval(timestamp, INTERVAL '1' ${range.unitName})`);
+    console.log('Query is', query);
+    return query;
+}
+
+async function runQuery(range) {
+    let query = theEditor.getValue();
+    query = replaceQuery(query, range);
+    const resp = await fetch('/sql', {
+        method: 'POST',
+        body: query,
+    });
+    const j = await resp.json();
+    return j.data;
+}
+
+function getRange() {
+    const from = fromFP.selectedDates[0];
+    const to = toFP.selectedDates[0];
+    const fromSeconds = Math.floor(from.getTime()/1000);
+    const toSeconds = Math.floor(to.getTime()/1000);
+    const spanSeconds = toSeconds - fromSeconds;
+    const minXDivs = 100;
+    let unitName = 'SECOND';
+    let unitSeconds = 1;
+    if (spanSeconds > 60 * 60 * 24 * minXDivs) {
+        unitName = 'DAY';
+        unitSeconds = 60 * 60 *24;
+    }
+    else if (spanSeconds > 60 * 60 * minXDivs) {
+        unitName = 'HOUR';
+        unitSeconds = 60 * 60;
+    }
+    else if (spanSeconds > 60 * minXDivs) {
+        unitName = 'MINUTE';
+        unitSeconds = 60;
+    }
+
+    return {
+        fromSeconds,
+        toSeconds,
+        unitName,
+        unitSeconds
+    }
+}
+
+async function renderChart() {
+    const visWrapDiv = document.querySelector('#wrapvis');
+    visWrapDiv.classList.add('loading');
+
+    const range = getRange();
+    console.log('Range is', range);
+    const data = await runQuery(range);
+
+    // Need to manually "toStartOfInterval" the bounds
+    const startSeconds = Math.floor(range.fromSeconds / range.unitSeconds) * range.unitSeconds;
+    const stopSeconds = Math.floor(range.toSeconds / range.unitSeconds) * range.unitSeconds;
+
+    const spec = {
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "description": "A line chart.",
+        "width": "container",
+        "height": 200,
+
+        "data": {
+            "values": data,
+        },
+        "mark": {"type": "line", "point": true},
+        "encoding": {
+            "x": {
+                "field": "t", 
+                "type": "temporal",
+            },
+            "y": {
+                "field": "v",
+                "type": "quantitative",
+                "impute": {
+                    "keyvals": {
+                        "start": startSeconds * 1000,
+                        "stop": stopSeconds * 1000,
+                        "step": range.unitSeconds * 1000,
+                    },
+                    "value": null,
+                },
+            },
+            "color": {
+                "field": "label",
+                "type": "nominal",
+            },        
+        },
+    };
+    console.log('Step is', spec.encoding.y.impute.keyvals.step);
+
+    if (theView !== null) {
+        theView.finalize();
+    }
+    vegaEmbed('#vis', spec, {theme: 'dark', actions: false}).then(function(result) {
+        theView = result.view;
+        visWrapDiv.classList.remove('loading');
+    }).catch(console.error);    
+}
+
+function update() {
+    renderChart();
+}
+
+window.onload = event => {
+    fromFP = flatpickr('#fromdt', {enableTime: true, defaultDate: new Date(Date.now() - 7*24*60*60*1000)});
+    toFP = flatpickr('#todt', {enableTime: true, defaultDate: Date.now()});
+
+    theEditor = ace.edit("query");
+    theEditor.setTheme("ace/theme/monokai");
+    theEditor.session.setMode("ace/mode/sql");
+
+    renderChart();
+    document.querySelector('#update').onclick = event => update();
+    document.querySelector('#apply').onclick = event => update();
+};
+
+    </script>
+</body>
+
+</html>
