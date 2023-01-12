@@ -1,4 +1,5 @@
 export async function onRequestPost({request, env}) {
+    return makeResponse(JSON.stringify(env), 200);
     const account = env.ACCOUNT_ID;
     const bearer = env.BEARER;
     const API = `https://api.cloudflare.com/client/v4/accounts/${account}/analytics_engine/sql`;
