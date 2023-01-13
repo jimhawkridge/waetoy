@@ -11,9 +11,9 @@ export async function onRequestPost({request, env}) {
         body: query
     })
     
-    const respBody = await resp.text();
+    let respBody = await resp.text();
     if (resp.status != 200) {
-        return makeResponse(`Error ${respBody}`);
+        respBody = JSON.stringify({error: respBody});
     }
     return new Response(
         respBody,
@@ -21,17 +21,4 @@ export async function onRequestPost({request, env}) {
 			headers: { 'content-type': 'application/json' },
 		}
     )
-}
-
-// makeResponse builds a JSON response with the supplied status code.
-function makeResponse(text, code) {
-	return new Response(
-		JSON.stringify({
-			message: text,
-		}),
-		{
-			status: code,
-			headers: { 'content-type': 'application/json' },
-		}
-	);
 }

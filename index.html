@@ -43,6 +43,9 @@
 
         #vis {
             width: 100%;
+            min-height: 250px;
+            color: red;
+            font-weight: bold;
         }
 
         #query {
@@ -96,13 +99,12 @@
     $timeSeries AS t, 
     index1 AS label,
     toUInt32(SUM(_sample_interval)) AS v 
-FROM change_me
+FROM my_dataset
 WHERE 
-    endsWith(index1, 'uk') AND
     $timeFilter
 GROUP BY label, t
         </div>
-        <button id="update">Run query</button>
+        <button id="update">Apply</button>
     </div>
 
 
@@ -112,13 +114,6 @@ var toFP;
 var theView = null;
 var theEditor;
 
-function apply() {
-    renderChart();
-
-    // theView.signal('fromSignal', from.getTime());
-    // theView.signal('toSignal', to.getTime());
-}
-
 function replaceQuery(query, range) {
     query = query.replace(/\$timeFilter/g, `timestamp > toDateTime(${range.fromSeconds}) AND timestamp <= toDateTime(${range.toSeconds})`);
     query = query.replace(/\$timeSeries/g, `toStartOfInterval(timestamp, INTERVAL '1' ${range.unitName})`);
@@ -126,15 +121,46 @@ function replaceQuery(query, range) {
     return query;
 }
 
-async function runQuery(range) {
+function loadState(state) {
+    if (typeof(state.query) == 'string') {
+        theEditor.setValue(state.query);
+    }
+    if (typeof(state.from) == 'number') {
+        fromFP.setDate(new Date(state.from*1000));
+    }
+    if (typeof(state.to) == 'number') {
+        toFP.setDate(new Date(state.to*1000));
+    }
+}
+
+function saveState(query) {
+    const params = new URLSearchParams(window.location.search);
+    const range = getRange();
+    const from = range.fromSeconds;
+    const to = range.toSeconds;
+    const state = {query, from, to};
+    params.set('q', btoa(JSON.stringify(state)));
+    window.history.pushState(state, '', '?'+params.toString());
+}
+
+async function runQuery(range, save) {
     let query = theEditor.getValue();
+    if (save) {
+        saveState(query);
+    }
+
     query = replaceQuery(query, range);
     const resp = await fetch('/sql', {
         method: 'POST',
         body: query,
     });
     const j = await resp.json();
-    return j.data;
+
+    return {
+        cols: j.meta,
+        data: j.data,
+        error: j.error
+    };
 }
 
 function getRange() {
@@ -167,13 +193,33 @@ function getRange() {
     }
 }
 
-async function renderChart() {
+async function renderChart(save) {
     const visWrapDiv = document.querySelector('#wrapvis');
     visWrapDiv.classList.add('loading');
 
     const range = getRange();
     console.log('Range is', range);
-    const data = await runQuery(range);
+    const {cols, data, error} = await runQuery(range, save);
+
+    if (error !== undefined) {
+        document.querySelector('#vis').innerHTML = '⚠️ ' + error + ' ⚠️';
+        visWrapDiv.classList.remove('loading');
+        return;
+    }
+
+    // First column is time, then optional label (if multiple series), then value
+    let timeCol = 't';
+    if (cols.length >= 1) {
+        timeCol = cols[0].name;
+    }
+    let valCol = 'v';
+    let labelCol = null;
+    if (cols.length >= 3) {
+        valCol = cols[2].name;
+        labelCol = cols[1].name;
+    } else if (cols.length >= 2) {
+        valCol = cols[1].name;
+    }
 
     // Need to manually "toStartOfInterval" the bounds
     const startSeconds = Math.floor(range.fromSeconds / range.unitSeconds) * range.unitSeconds;
@@ -191,11 +237,11 @@ async function renderChart() {
         "mark": {"type": "line", "point": true},
         "encoding": {
             "x": {
-                "field": "t", 
+                "field": timeCol, 
                 "type": "temporal",
             },
             "y": {
-                "field": "v",
+                "field": valCol,
                 "type": "quantitative",
                 "impute": {
                     "keyvals": {
@@ -206,13 +252,15 @@ async function renderChart() {
                     "value": null,
                 },
             },
-            "color": {
-                "field": "label",
-                "type": "nominal",
-            },        
         },
     };
-    console.log('Step is', spec.encoding.y.impute.keyvals.step);
+    if (labelCol !== null) {
+        spec.encoding.color = {
+            "field": labelCol,
+            "type": "nominal",
+        }
+    }
+    console.log('Spec is', spec);
 
     if (theView !== null) {
         theView.finalize();
@@ -224,20 +272,35 @@ async function renderChart() {
 }
 
 function update() {
-    renderChart();
+    renderChart(true);
 }
 
 window.onload = event => {
     fromFP = flatpickr('#fromdt', {enableTime: true, defaultDate: new Date(Date.now() - 7*24*60*60*1000)});
     toFP = flatpickr('#todt', {enableTime: true, defaultDate: Date.now()});
 
-    theEditor = ace.edit("query");
-    theEditor.setTheme("ace/theme/monokai");
-    theEditor.session.setMode("ace/mode/sql");
+    theEditor = ace.edit('query');
+    theEditor.setTheme('ace/theme/monokai');
+    theEditor.session.setMode('ace/mode/sql');
 
-    renderChart();
+    const q = new URLSearchParams(window.location.search).get('q');
+    try {
+        const savedJSON = atob(q);
+        const state = JSON.parse(savedJSON);
+        loadState(state);
+        renderChart(false);
+    }
+    catch(e) {
+        console.log('Unable to parse query string');
+    }
+
     document.querySelector('#update').onclick = event => update();
     document.querySelector('#apply').onclick = event => update();
+};
+
+window.onpopstate = event => {
+    loadState(event.state);
+    renderChart(false);
 };
 
     </script>
