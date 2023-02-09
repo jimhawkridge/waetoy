@@ -117,6 +117,7 @@ var theEditor;
 function replaceQuery(query, range) {
     query = query.replace(/\$timeFilter/g, `timestamp > toDateTime(${range.fromSeconds}) AND timestamp <= toDateTime(${range.toSeconds})`);
     query = query.replace(/\$timeSeries/g, `toStartOfInterval(timestamp, INTERVAL '1' ${range.unitName})`);
+    query = query.replace(/\$interval/g, `${range.unitSeconds}`);
     console.log('Query is', query);
     return query;
 }
